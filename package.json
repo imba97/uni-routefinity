@@ -9,8 +9,7 @@
   "type": "module",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.mjs",
-    "./package.json": "./package.json"
+    ".": "./dist/index.mjs"
   },
   "scripts": {
     "build": "vp pack",
