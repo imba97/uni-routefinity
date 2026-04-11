@@ -1,32 +1,29 @@
 import { defineConfig } from "vite-plus";
 
-const IGNORE_PATTERNS = ["node_modules/**", ".pnpm/**", "dist/**", ".vite-hooks/**", "*.d.ts"];
-
 export default defineConfig({
   staged: {
-    "*": "vp check --fix",
+    "src/**/*.{ts,js,mjs,cjs}": "vp check --fix",
+    "vite.config.ts": "vp check --fix",
+    "package.json": "vp check --fix",
+    "README.md": "vp check --fix"
   },
   pack: {
     dts: {
-      tsgo: true,
+      tsgo: true
     },
     exports: {
-      packageJson: false,
+      packageJson: false
     },
     format: ["esm", "cjs"],
-    minify: true,
+    minify: true
   },
   lint: {
-    ignorePatterns: IGNORE_PATTERNS,
     options: {
       typeAware: true,
-      typeCheck: true,
-    },
+      typeCheck: true
+    }
   },
   fmt: {
-    ignorePatterns: IGNORE_PATTERNS,
-    options: {
-      trailingComma: "none",
-    },
-  },
+    trailingComma: "none"
+  }
 });
