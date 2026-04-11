@@ -2,7 +2,19 @@
   "name": "uni-routefinity",
   "version": "0.0.1",
   "description": "Infinite logical history with bounded page stack for uni-app routing",
+  "keywords": [
+    "history",
+    "routing",
+    "uni-app",
+    "uni-routefinity"
+  ],
+  "homepage": "https://github.com/imba97/uni-routefinity#readme",
   "license": "MIT",
+  "author": "imba97",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:imba97/uni-routefinity.git"
+  },
   "files": [
     "dist"
   ],
