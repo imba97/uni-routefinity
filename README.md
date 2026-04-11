@@ -32,13 +32,13 @@ setupUniRouter({
   stackSafeLimit: 9,
   pageHardLimit: 5,
   debounceMs: 400,
-  protectedPaths: ["/pages/user/home/index", "/pages/user/mine/index"],
+  protectedPaths: ["/pages/user/home/index", "/pages/user/mine/index"]
 });
 
 const router = useRouter();
 
 await router.navigateTo("/pages-user-course/course-detail/index", {
-  course_id: "2037xxxx",
+  course_id: "2037xxxx"
 });
 
 await router.navigateBack();

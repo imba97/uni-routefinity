@@ -12,7 +12,7 @@ function location(path: string, query: Record<string, string> = {}) {
     path,
     query,
     fullPath,
-    key: fullPath,
+    key: fullPath
   };
 }
 

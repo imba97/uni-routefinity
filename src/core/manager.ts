@@ -33,7 +33,7 @@ const DEFAULT_POLICY: Required<Omit<RoutefinityOptions, "onLog">> = {
   stackSafeLimit: 9,
   debounceMs: 400,
   pageHardLimit: 5,
-  protectedPaths: [],
+  protectedPaths: []
 };
 
 class RouteHistoryManager {
@@ -79,7 +79,7 @@ class RouteHistoryManager {
       uni.navigateBack({
         delta,
         success: () => resolve(),
-        fail: () => resolve(),
+        fail: () => resolve()
       });
     });
   }
@@ -105,35 +105,35 @@ class RouteHistoryManager {
       invoke: (args: NavigateInvokeArgs) => this.handleNavigateToInvoke(args),
       success: () => this.handleNavigateToSuccess(),
       fail: () => this.clearPending(),
-      complete: () => this.clearPending(),
+      complete: () => this.clearPending()
     });
 
     uni.addInterceptor("redirectTo", {
       invoke: (args: NavigateInvokeArgs) => this.handleRedirectInvoke(args),
       success: () => this.handleRedirectSuccess(),
       fail: () => this.clearPending(),
-      complete: () => this.clearPending(),
+      complete: () => this.clearPending()
     });
 
     uni.addInterceptor("navigateBack", {
       invoke: (args: NavigateBackInvokeArgs) => this.handleNavigateBackInvoke(args),
       success: () => this.handleNavigateBackSuccess(),
       fail: () => this.clearPending(),
-      complete: () => this.clearPending(),
+      complete: () => this.clearPending()
     });
 
     uni.addInterceptor("reLaunch", {
       invoke: (args: NavigateInvokeArgs) => this.handleReLaunchInvoke(args),
       success: () => this.handleReLaunchSuccess(),
       fail: () => this.clearPending(),
-      complete: () => this.clearPending(),
+      complete: () => this.clearPending()
     });
 
     uni.addInterceptor("switchTab", {
       invoke: (args: NavigateInvokeArgs) => this.handleSwitchTabInvoke(args),
       success: () => this.handleSwitchTabSuccess(),
       fail: () => this.clearPending(),
-      complete: () => this.clearPending(),
+      complete: () => this.clearPending()
     });
   }
 
@@ -287,7 +287,7 @@ class RouteHistoryManager {
   private decideNavigateToAction(
     current: RouteSnapshot | undefined,
     target: RouteLocation,
-    pages: Page.PageInstance[],
+    pages: Page.PageInstance[]
   ): NavigateToDecision {
     if (current?.key === target.key) return "noop";
     if (current?.path === target.path) return "replace";
@@ -303,7 +303,7 @@ class RouteHistoryManager {
   private downgradeNavigateTo(
     target: RouteLocation,
     mode: NavigateByRedirectMode,
-    timestamp: number,
+    timestamp: number
   ) {
     this.pending = { kind: "navigateToByRedirect", target, mode };
     this.lastNavigateKey = target.key;
@@ -374,13 +374,13 @@ class RouteHistoryManager {
 
   private callRouteMethod(
     method: "navigateTo" | "redirectTo" | "reLaunch" | "switchTab",
-    url: string,
+    url: string
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const options = {
         url,
         success: () => resolve(),
-        fail: (err: unknown) => reject(err),
+        fail: (err: unknown) => reject(err)
       };
       switch (method) {
         case "navigateTo":
@@ -426,8 +426,8 @@ export const router = {
     list: () => routeHistoryManager.listRouteHistory(),
     peek: () => routeHistoryManager.peekRouteHistory(),
     clear: () => routeHistoryManager.clearRouteHistory(),
-    findLast: (path: string) => routeHistoryManager.findLastByPath(path),
-  },
+    findLast: (path: string) => routeHistoryManager.findLastByPath(path)
+  }
 };
 
 export function useRouter() {

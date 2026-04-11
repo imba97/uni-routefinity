@@ -41,7 +41,7 @@ function createUniMock(initialPages: PageLike[]) {
 
   const run = (
     method: "navigateTo" | "redirectTo" | "reLaunch" | "switchTab" | "navigateBack",
-    args: UniArgs,
+    args: UniArgs
   ) => {
     const interceptor = interceptors.get(method);
     const invokeResult = interceptor?.invoke?.(args);
@@ -87,12 +87,12 @@ function createUniMock(initialPages: PageLike[]) {
     redirectTo: vi.fn((args: UniArgs) => run("redirectTo", args)),
     reLaunch: vi.fn((args: UniArgs) => run("reLaunch", args)),
     switchTab: vi.fn((args: UniArgs) => run("switchTab", args)),
-    navigateBack: vi.fn((args: UniArgs) => run("navigateBack", args)),
+    navigateBack: vi.fn((args: UniArgs) => run("navigateBack", args))
   };
 
   return {
     uni,
-    pages,
+    pages
   };
 }
 
@@ -113,7 +113,7 @@ describe("core/manager", () => {
 
   it("keeps history size when navigating same path with different params", async () => {
     const { setupUniRouter, uni, router } = await setupModule([
-      { route: "pages/home", options: {} },
+      { route: "pages/home", options: {} }
     ]);
 
     setupUniRouter({ stackSafeLimit: 20, pageHardLimit: 20 });
@@ -128,7 +128,7 @@ describe("core/manager", () => {
 
   it("downgrades to redirect and still pushes logical history near limit", async () => {
     const { setupUniRouter, uni, router, pages } = await setupModule([
-      { route: "pages/home", options: {} },
+      { route: "pages/home", options: {} }
     ]);
 
     setupUniRouter({ stackSafeLimit: 2, pageHardLimit: 5 });
@@ -143,7 +143,7 @@ describe("core/manager", () => {
 
   it("prefers native back and syncs logical history afterwards", async () => {
     const { setupUniRouter, uni, router } = await setupModule([
-      { route: "pages/home", options: {} },
+      { route: "pages/home", options: {} }
     ]);
 
     setupUniRouter({ stackSafeLimit: 20, pageHardLimit: 20 });

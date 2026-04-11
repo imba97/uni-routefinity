@@ -65,7 +65,7 @@ function normalizeQueryObject(query: Record<string, unknown>): Record<string, st
 
 function stringifyQuery(
   query: Record<string, unknown> | Record<string, string>,
-  shouldSortKeys: boolean,
+  shouldSortKeys: boolean
 ): string {
   const keys = Object.keys(query).filter((key) => query[key] !== undefined && query[key] !== null);
   if (!keys.length) return "";
