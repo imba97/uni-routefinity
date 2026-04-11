@@ -1,7 +1,7 @@
-import type { RouteLocation, RoutefinityOptions, RouteSnapshot } from "./types";
+import type { RouteLocation, RoutefinityOptions, RouteSnapshot } from "../types";
 import { renderRouteStackGraph } from "./logger";
 import { RouteHistoryStore } from "./store";
-import { buildUrl, parsePageInstance, parseUrl } from "./utils";
+import { buildUrl, parsePageInstance, parseUrl } from "../utils/url";
 
 interface NavigateInvokeArgs {
   url: string;

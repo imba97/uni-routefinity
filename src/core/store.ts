@@ -1,4 +1,4 @@
-import type { RouteAction, RouteLocation, RouteSnapshot } from "./types";
+import type { RouteAction, RouteLocation, RouteSnapshot } from "../types";
 
 const DEFAULT_MAX_DEPTH = 500;
 

@@ -1,4 +1,4 @@
-import type { RouteSnapshot } from "./types";
+import type { RouteSnapshot } from "../types";
 
 const SLOT_COUNT = 5;
 const SLOT_CELL_WIDTH = 6;

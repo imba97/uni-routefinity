@@ -1,4 +1,4 @@
-import type { RouteLocation } from "./types";
+import type { RouteLocation } from "../types";
 
 type PageWithOptions = Page.PageInstance & { options?: Record<string, unknown> };
 
