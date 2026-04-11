@@ -1,0 +1,5 @@
+node_modules
+dist
+.vite-hooks
+.pnpm-store
+.DS_Store

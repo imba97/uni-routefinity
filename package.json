@@ -1,0 +1,35 @@
+{
+  "name": "uni-routefinity",
+  "version": "0.0.1",
+  "description": "Infinite logical history with bounded page stack for uni-app routing",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "vp pack",
+    "dev": "vp pack --watch",
+    "check": "vp check",
+    "lint": "vp lint",
+    "test": "vp test",
+    "type-check": "vp check --type-check",
+    "release": "bumpp",
+    "prepublishOnly": "vp run build",
+    "prepare": "vp config"
+  },
+  "devDependencies": {
+    "@dcloudio/types": "^3.4.30",
+    "@types/node": "^25.6.0",
+    "@typescript/native-preview": "7.0.0-dev.20260328.1",
+    "bumpp": "^11.0.1",
+    "typescript": "^6.0.2",
+    "vite-plus": "^0.1.16"
+  },
+  "packageManager": "pnpm@10.33.0"
+}
