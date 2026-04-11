@@ -5,39 +5,34 @@ type PageWithOptions = Page.PageInstance & { options?: Record<string, unknown> }
 export function buildUrl(url: string, params?: Record<string, unknown>): string {
   if (!params || Object.keys(params).length === 0) return url;
 
-  const query = Object.keys(params)
-    .filter((key) => params[key] !== undefined && params[key] !== null)
-    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
-    .join("&");
+  const query = stringifyQuery(params, true);
+  if (!query) return url;
 
-  return query ? `${url}?${query}` : url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}${query}`;
 }
 
 export function parseUrl(url: string): RouteLocation {
-  const [rawPath = "/", rawQuery = ""] = url.split("?");
+  const queryIndex = url.indexOf("?");
+  const rawPath = queryIndex >= 0 ? url.slice(0, queryIndex) : url;
+  const rawQuery = queryIndex >= 0 ? url.slice(queryIndex + 1) : "";
   const path = normalizePath(rawPath);
   const query = parseQuery(rawQuery);
-  const fullPath = buildFullPath(path, query);
-  return { path, query, fullPath, key: createRouteKey(path, query) };
+  const queryString = stringifyQuery(query, false);
+  const fullPath = queryString ? `${path}?${queryString}` : path;
+  return { path, query, fullPath, key: createRouteKey(path, queryString) };
 }
 
 export function parsePageInstance(page: PageWithOptions): RouteLocation {
   const path = normalizePath(`/${page.route || ""}`);
   const query = normalizeQueryObject(page.options || {});
-  const fullPath = buildFullPath(path, query);
-  return { path, query, fullPath, key: createRouteKey(path, query) };
+  const queryString = stringifyQuery(query, false);
+  const fullPath = queryString ? `${path}?${queryString}` : path;
+  return { path, query, fullPath, key: createRouteKey(path, queryString) };
 }
 
-function createRouteKey(path: string, query: Record<string, string>): string {
-  const keys = Object.keys(query).sort((a, b) => a.localeCompare(b));
-  if (!keys.length) return path;
-  return `${path}?${keys.map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(query[k])}`).join("&")}`;
-}
-
-function buildFullPath(path: string, query: Record<string, string>): string {
-  const keys = Object.keys(query);
-  if (!keys.length) return path;
-  return `${path}?${keys.map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(query[k])}`).join("&")}`;
+function createRouteKey(path: string, queryString: string): string {
+  return queryString ? `${path}?${queryString}` : path;
 }
 
 function parseQuery(rawQuery: string): Record<string, string> {
@@ -66,6 +61,22 @@ function normalizeQueryObject(query: Record<string, unknown>): Record<string, st
       normalized[key] = String(query[key]);
     });
   return normalized;
+}
+
+function stringifyQuery(
+  query: Record<string, unknown> | Record<string, string>,
+  shouldSortKeys: boolean,
+): string {
+  const keys = Object.keys(query).filter((key) => query[key] !== undefined && query[key] !== null);
+  if (!keys.length) return "";
+
+  if (shouldSortKeys) {
+    keys.sort((a, b) => a.localeCompare(b));
+  }
+
+  return keys
+    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(String(query[key]))}`)
+    .join("&");
 }
 
 function normalizePath(path: string): string {

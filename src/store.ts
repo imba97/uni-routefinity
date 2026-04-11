@@ -4,10 +4,13 @@ const DEFAULT_MAX_DEPTH = 500;
 
 export class RouteHistoryStore {
   private stack: RouteSnapshot[] = [];
-  private keyToLastIndex = new Map<string, number>();
 
   list(): RouteSnapshot[] {
     return [...this.stack];
+  }
+
+  listUnsafe(): RouteSnapshot[] {
+    return this.stack;
   }
 
   current(): RouteSnapshot | undefined {
@@ -23,8 +26,7 @@ export class RouteHistoryStore {
   }
 
   clear() {
-    this.stack = [];
-    this.keyToLastIndex.clear();
+    this.stack.length = 0;
   }
 
   findLastByPath(path: string): RouteSnapshot | undefined {
@@ -41,7 +43,6 @@ export class RouteHistoryStore {
     this.stack.push(this.toSnapshot(location, action));
     if (this.stack.length > DEFAULT_MAX_DEPTH)
       this.stack.splice(0, this.stack.length - DEFAULT_MAX_DEPTH);
-    this.rebuildIndex();
   }
 
   replaceCurrent(location: RouteLocation, action: RouteAction) {
@@ -50,12 +51,16 @@ export class RouteHistoryStore {
       return;
     }
     this.stack[this.stack.length - 1] = this.toSnapshot(location, action);
-    this.rebuildIndex();
   }
 
   resetToRoot(location: RouteLocation, action: RouteAction) {
-    this.stack = [this.toSnapshot(location, action)];
-    this.rebuildIndex();
+    const snapshot = this.toSnapshot(location, action);
+    if (this.stack.length === 0) {
+      this.stack.push(snapshot);
+      return;
+    }
+    this.stack[0] = snapshot;
+    this.stack.length = 1;
   }
 
   back(delta = 1) {
@@ -63,27 +68,19 @@ export class RouteHistoryStore {
 
     const safeDelta = Math.max(1, delta);
     if (safeDelta >= this.stack.length) {
-      this.stack = [this.stack[0]];
-      this.rebuildIndex();
+      this.stack.length = 1;
       return;
     }
 
     this.stack.splice(this.stack.length - safeDelta, safeDelta);
-    this.rebuildIndex();
   }
 
   trimToIndex(index: number) {
     if (index < 0 || index >= this.stack.length) return;
     this.stack.splice(index + 1);
-    this.rebuildIndex();
   }
 
   private toSnapshot(location: RouteLocation, action: RouteAction): RouteSnapshot {
     return { ...location, action, ts: Date.now() };
-  }
-
-  private rebuildIndex() {
-    this.keyToLastIndex.clear();
-    this.stack.forEach((item, index) => this.keyToLastIndex.set(item.key, index));
   }
 }
