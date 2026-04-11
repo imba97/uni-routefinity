@@ -10,7 +10,10 @@ export default defineConfig({
     dts: {
       tsgo: true,
     },
-    exports: true,
+    exports: {
+      packageJson: false,
+    },
+    format: ["esm", "cjs"],
     minify: true,
   },
   lint: {
@@ -22,5 +25,8 @@ export default defineConfig({
   },
   fmt: {
     ignorePatterns: IGNORE_PATTERNS,
+    options: {
+      trailingComma: "none",
+    },
   },
 });
