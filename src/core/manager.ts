@@ -1,6 +1,6 @@
 import type { RouteLocation, RoutefinityOptions, RouteSnapshot } from "../types";
 import { renderRouteStackGraph } from "./logger";
-import { RouteHistoryStore } from "./store";
+import { routeHistoryStore } from "./store";
 import { buildUrl, parsePageInstance, parseUrl } from "../utils/url";
 
 interface NavigateInvokeArgs {
@@ -14,15 +14,13 @@ interface NavigateBackInvokeArgs {
   delta?: number;
 }
 
-type NavigateByRedirectMode = "push" | "replace";
-type NavigateToDecision = "noop" | "native" | "replace" | "push";
+type NavigateToDecision = "noop" | "native" | "downgrade";
 
 type PendingState =
   | { kind: "idle" }
   | { kind: "navigateTo"; target: RouteLocation }
   | { kind: "redirectTo"; target: RouteLocation }
-  | { kind: "navigateToByRedirect"; target: RouteLocation; mode: NavigateByRedirectMode }
-  | { kind: "navigateBackNative" }
+  | { kind: "navigateToByRedirect"; target: RouteLocation }
   | { kind: "logicalBackFallback"; targetIndex: number }
   | { kind: "reLaunch"; target: RouteLocation }
   | { kind: "switchTab"; target: RouteLocation };
@@ -33,18 +31,21 @@ const DEFAULT_POLICY: Required<Omit<RoutefinityOptions, "onLog">> = {
   stackSafeLimit: 9,
   debounceMs: 400,
   pageHardLimit: 5,
-  protectedPaths: []
+  protectedPaths: [],
+  autoReconcileOnShow: true
 };
 
 class RouteHistoryManager {
   private hasInitialized = false;
+  private hasInstalledPageOnShowReconcile = false;
   private pending: PendingState = IDLE_PENDING;
+  private pendingReconcileReason = "";
   private lastNavigateKey = "";
   private lastNavigateAt = 0;
   private policy: Required<Omit<RoutefinityOptions, "onLog">> = { ...DEFAULT_POLICY };
   private protectedPathSet = new Set<string>();
   private onLog: RoutefinityOptions["onLog"];
-  private readonly store = new RouteHistoryStore();
+  private readonly store = routeHistoryStore;
 
   setup(input: RoutefinityOptions = {}) {
     if (this.hasInitialized) return;
@@ -55,7 +56,12 @@ class RouteHistoryManager {
     this.onLog = input.onLog;
 
     this.bootstrapFromCurrentPages();
+    setTimeout(() => {
+      this.reconcileWithNativePages("setup:postBoot", true);
+      this.logHistory();
+    }, 0);
     this.registerInterceptors();
+    this.installPageOnShowReconcile();
   }
 
   navigateTo(url: string, params?: Record<string, unknown>) {
@@ -84,8 +90,39 @@ class RouteHistoryManager {
     });
   }
 
+  reconcileWithNativePages(reason = "manual", force = false): boolean {
+    const pages = getCurrentPages();
+    if (!pages.length) return false;
+
+    const nativeSnapshots = pages.map((page) => parsePageInstance(page));
+    const historySnapshots = this.store.list();
+    if (!this.hasStackMismatch(historySnapshots, nativeSnapshots)) return false;
+
+    if (!force && this.pending.kind !== "idle") {
+      this.pendingReconcileReason = reason;
+      return false;
+    }
+
+    const nativeTop = nativeSnapshots[nativeSnapshots.length - 1];
+    const historyTop = historySnapshots[historySnapshots.length - 1];
+
+    this.rebuildStoreFromPages(pages);
+    this.logReconcileInfo(
+      reason,
+      nativeSnapshots.length,
+      historySnapshots.length,
+      nativeTop?.fullPath,
+      historyTop?.fullPath
+    );
+    return true;
+  }
+
   listRouteHistory(): RouteSnapshot[] {
     return this.store.list();
+  }
+
+  listRouteHistoryForGraph(): RouteSnapshot[] {
+    return this.store.listForGraph();
   }
 
   peekRouteHistory() {
@@ -117,7 +154,7 @@ class RouteHistoryManager {
 
     uni.addInterceptor("navigateBack", {
       invoke: (args: NavigateBackInvokeArgs) => this.handleNavigateBackInvoke(args),
-      success: () => this.handleNavigateBackSuccess(),
+      success: () => this.applyLogicalBackFallbackIfNeeded(),
       fail: () => this.clearPending(),
       complete: () => this.clearPending()
     });
@@ -161,13 +198,8 @@ class RouteHistoryManager {
       return false;
     }
 
-    if (decision === "replace") {
-      this.downgradeNavigateTo(target, "replace", now);
-      return false;
-    }
-
-    if (decision === "push") {
-      this.downgradeNavigateTo(target, "push", now);
+    if (decision === "downgrade") {
+      this.downgradeNavigateTo(target, now);
       return false;
     }
     if (decision !== "native") return false;
@@ -185,6 +217,8 @@ class RouteHistoryManager {
   }
 
   private handleRedirectInvoke(args: NavigateInvokeArgs) {
+    if (this.pending.kind === "logicalBackFallback") return;
+
     if (this.pending.kind !== "idle" && this.pending.kind !== "navigateToByRedirect") return;
     if (this.pending.kind === "navigateToByRedirect" && this.pending.target.fullPath === args.url)
       return;
@@ -202,9 +236,8 @@ class RouteHistoryManager {
     if (this.applyLogicalBackFallbackIfNeeded()) return;
 
     if (this.pending.kind === "navigateToByRedirect") {
-      if (this.pending.mode === "replace")
-        this.store.replaceCurrent(this.pending.target, "navigateTo");
-      else this.store.push(this.pending.target, "navigateTo");
+      // 降级场景下物理栈深不变,store 必须 replaceCurrent 而非 push,否则 deferred-reconcile 会用 native 覆盖导致逻辑帧被丢
+      this.store.replaceCurrent(this.pending.target, "navigateToByRedirect");
       this.finalizeHistoryUpdate();
       return;
     }
@@ -218,10 +251,28 @@ class RouteHistoryManager {
     if (this.pending.kind !== "idle") return false;
 
     const pages = this.bootstrapFromCurrentPages();
+    this.reconcileWithNativePages("navigateBack:invoke");
 
     const delta = Math.max(1, args?.delta ?? 1);
     const historySize = this.store.size();
     if (historySize <= 1) return;
+
+    const graph = this.store.listForGraph();
+    // 图链长于物理栈:被换顶的页不在原生栈里,不能 navigateBack 多格或跳到栈上错误层;每次只回到图链上一页
+    if (graph.length > historySize) {
+      const prev = graph[graph.length - 2];
+      if (!prev) return false;
+
+      if (this.protectedPathSet.has(prev.path)) {
+        const keepIdx = this.store.findIndexByKey(prev.key);
+        this.pending = { kind: "logicalBackFallback", targetIndex: Math.max(0, keepIdx) };
+        void uni.reLaunch({ url: prev.fullPath });
+      } else {
+        this.store.applyLogicalGraphBack(prev);
+        void uni.redirectTo({ url: prev.fullPath });
+      }
+      return false;
+    }
 
     const nativeMaxDelta = Math.max(0, pages.length - 1);
 
@@ -232,7 +283,7 @@ class RouteHistoryManager {
       const nativeTarget = nativeTargetPage ? parsePageInstance(nativeTargetPage) : undefined;
 
       if (logicalTarget && nativeTarget && logicalTarget.key === nativeTarget.key) {
-        this.pending = { kind: "navigateBackNative" };
+        this.pending = { kind: "logicalBackFallback", targetIndex: logicalTargetIndex };
         return;
       }
     }
@@ -247,13 +298,6 @@ class RouteHistoryManager {
     else void uni.redirectTo({ url: target.fullPath });
 
     return false;
-  }
-
-  private handleNavigateBackSuccess() {
-    if (this.pending.kind !== "navigateBackNative") return;
-
-    this.syncHistoryFromCurrentPages(true);
-    this.finalizeHistoryUpdate();
   }
 
   private handleReLaunchInvoke(args: NavigateInvokeArgs) {
@@ -290,22 +334,25 @@ class RouteHistoryManager {
     pages: Page.PageInstance[]
   ): NavigateToDecision {
     if (current?.key === target.key) return "noop";
-    if (current?.path === target.path) return "replace";
+    if (current?.path === target.path) return "downgrade";
     if (pages.length >= this.policy.pageHardLimit || pages.length >= this.policy.stackSafeLimit)
-      return "push";
+      return "downgrade";
     return "native";
   }
 
   private clearPending() {
+    const deferredReason = this.pendingReconcileReason;
     this.pending = IDLE_PENDING;
+    this.pendingReconcileReason = "";
+
+    if (deferredReason) {
+      this.reconcileWithNativePages(`${deferredReason}:afterPending`, true);
+      this.logHistory();
+    }
   }
 
-  private downgradeNavigateTo(
-    target: RouteLocation,
-    mode: NavigateByRedirectMode,
-    timestamp: number
-  ) {
-    this.pending = { kind: "navigateToByRedirect", target, mode };
+  private downgradeNavigateTo(target: RouteLocation, timestamp: number) {
+    this.pending = { kind: "navigateToByRedirect", target };
     this.lastNavigateKey = target.key;
     this.lastNavigateAt = timestamp;
     void uni.redirectTo({ url: target.fullPath });
@@ -336,40 +383,103 @@ class RouteHistoryManager {
     const nativeCurrent = parsePageInstance(nativeCurrentPage);
     const historyCurrent = this.store.current();
     if (!historyCurrent || historyCurrent.key !== nativeCurrent.key) {
-      this.syncHistoryFromCurrentPages(true);
+      this.rebuildStoreFromPages(getCurrentPages());
     }
   }
 
-  private syncHistoryFromCurrentPages(force = false) {
-    const pages = getCurrentPages();
+  private rebuildStoreFromPages(pages: Page.PageInstance[]) {
     if (!pages.length) return;
 
-    if (!force && this.store.size() > 0) return;
-
-    this.rebuildStoreFromPages(pages);
-  }
-
-  private rebuildStoreFromPages(pages: Page.PageInstance[]) {
     this.store.clear();
-
-    pages.forEach((page, index) => {
-      const location = parsePageInstance(page);
-      if (index === 0) this.store.resetToRoot(location, "reLaunch");
-      else this.store.push(location, "navigateTo");
-    });
+    this.store.resetToRoot(parsePageInstance(pages[0]), "reLaunch");
+    for (let i = 1; i < pages.length; i++) {
+      this.store.push(parsePageInstance(pages[i]), "navigateTo");
+    }
   }
 
   private finalizeHistoryUpdate() {
-    this.logHistory();
+    // 延后到下个微任务:与 uiron emitRouteStackLogAfterNavigationComplete 一致,
+    // 防止 store 同步修改与 reconcile 之间出现时序竞争(deferred-reconcile 用 native 覆盖 store 的 bug 复现)。
+    queueMicrotask(() => {
+      this.reconcileWithNativePages("finalizeHistoryUpdate");
+      this.logHistory();
+    });
+  }
+
+  private installPageOnShowReconcile() {
+    if (!this.policy.autoReconcileOnShow) return;
+    if (this.hasInstalledPageOnShowReconcile) return;
+
+    this.hasInstalledPageOnShowReconcile = true;
+
+    const globalScope = globalThis as typeof globalThis & {
+      Page?: (options: Record<string, unknown>) => unknown;
+      __UNI_ROUTEFINITY_PAGE_PATCHED__?: boolean;
+    };
+
+    if (globalScope.__UNI_ROUTEFINITY_PAGE_PATCHED__) return;
+
+    const originPage = globalScope.Page;
+    if (typeof originPage !== "function") return;
+
+    const reconcileWithNativePages = this.reconcileWithNativePages.bind(this);
+
+    const patchedPage = ((options: Record<string, unknown>) => {
+      if (options && typeof options === "object") {
+        const pageOptions = options as Record<string, unknown>;
+        const originOnShow = pageOptions.onShow;
+
+        pageOptions.onShow = function routefinityPageOnShow(...args: unknown[]) {
+          reconcileWithNativePages("page:onShow");
+          if (typeof originOnShow === "function")
+            return (originOnShow as (...innerArgs: unknown[]) => unknown).apply(this, args);
+        };
+      }
+      return originPage(options);
+    }) as typeof originPage;
+
+    Object.assign(patchedPage, originPage);
+    globalScope.Page = patchedPage;
+    globalScope.__UNI_ROUTEFINITY_PAGE_PATCHED__ = true;
+  }
+
+  private hasStackMismatch(history: RouteSnapshot[], native: RouteLocation[]): boolean {
+    if (history.length !== native.length) return true;
+
+    for (let i = 0; i < native.length; i++) {
+      const historyItem = history[i];
+      const nativeItem = native[i];
+
+      if (!historyItem || !nativeItem) return true;
+      if (historyItem.key !== nativeItem.key && historyItem.fullPath !== nativeItem.fullPath)
+        return true;
+    }
+
+    return false;
   }
 
   private logHistory() {
     if (!this.onLog) return;
 
-    const history = this.store.listUnsafe();
+    const history = this.store.listForGraph();
     if (!history.length) return;
 
     this.onLog(renderRouteStackGraph(history), history);
+  }
+
+  private logReconcileInfo(
+    reason: string,
+    nativeDepth: number,
+    historyDepth: number,
+    nativeTop?: string,
+    historyTop?: string
+  ) {
+    if (!this.onLog) return;
+
+    this.onLog(
+      `[routefinity] 路由栈已自动纠偏\n  reason=${reason}\n  native: ${nativeDepth}层, top=${nativeTop || ""}\n  history: ${historyDepth}层, top=${historyTop || ""}`,
+      this.store.listForGraph()
+    );
   }
 
   private callRouteMethod(
@@ -407,6 +517,9 @@ export function setupUniRouter(input: RoutefinityOptions = {}) {
 }
 
 export const router = {
+  setup(input: RoutefinityOptions = {}) {
+    setupUniRouter(input);
+  },
   navigateTo(url: string, params?: Record<string, unknown>) {
     return routeHistoryManager.navigateTo(url, params);
   },
@@ -422,11 +535,17 @@ export const router = {
   navigateBack(delta = 1): Promise<void> {
     return routeHistoryManager.navigateBack(delta);
   },
+  reconcileWithNativePages(reason?: string, force?: boolean): boolean {
+    return routeHistoryManager.reconcileWithNativePages(reason, force);
+  },
   history: {
     list: () => routeHistoryManager.listRouteHistory(),
+    listForGraph: () => routeHistoryManager.listRouteHistoryForGraph(),
     peek: () => routeHistoryManager.peekRouteHistory(),
     clear: () => routeHistoryManager.clearRouteHistory(),
-    findLast: (path: string) => routeHistoryManager.findLastByPath(path)
+    findLast: (path: string) => routeHistoryManager.findLastByPath(path),
+    reconcile: (reason?: string, force?: boolean): boolean =>
+      routeHistoryManager.reconcileWithNativePages(reason, force)
   }
 };
 

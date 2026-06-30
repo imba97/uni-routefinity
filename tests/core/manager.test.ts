@@ -136,8 +136,11 @@ describe("core/manager", () => {
     uni.navigateTo({ url: "/pages/a" });
     uni.navigateTo({ url: "/pages/b" });
 
+    // 物理栈与 native 保持一致(栈深不变),图链记录被换顶的访问链
     const history = router.history.list();
-    expect(history.map((item) => item.path)).toEqual(["/pages/home", "/pages/a", "/pages/b"]);
+    const graph = router.history.listForGraph();
+    expect(history.map((item) => item.path)).toEqual(["/pages/home", "/pages/b"]);
+    expect(graph.map((item) => item.path)).toEqual(["/pages/home", "/pages/a", "/pages/b"]);
     expect(pages).toHaveLength(2);
   });
 
@@ -164,5 +167,30 @@ describe("core/manager", () => {
     setupUniRouter();
 
     expect(uni.addInterceptor).toHaveBeenCalledTimes(5);
+  });
+
+  it("navigateBack walks graph chain one step at a time when graph is longer than physical stack", async () => {
+    const { setupUniRouter, uni, router, pages } = await setupModule([
+      { route: "pages/home", options: {} }
+    ]);
+
+    setupUniRouter({ stackSafeLimit: 2, pageHardLimit: 5 });
+
+    uni.navigateTo({ url: "/pages/a" });
+    uni.navigateTo({ url: "/pages/b" });
+    uni.navigateTo({ url: "/pages/c" });
+
+    // 物理栈被栈顶限制,图链记录所有访问
+    const physical = router.history.list();
+    const graph = router.history.listForGraph();
+    expect(physical).toHaveLength(2);
+    expect(graph.length).toBeGreaterThan(physical.length);
+
+    // navigateBack 第一次应通过 redirectTo 回到图链上一页(而非 native back)
+    uni.navigateBack({ delta: 1 });
+
+    // 物理栈每步仅回退一层,直到与图链对齐再走 native back
+    expect(pages.length).toBeGreaterThanOrEqual(2);
+    expect(uni.redirectTo).toHaveBeenCalled();
   });
 });

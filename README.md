@@ -13,8 +13,10 @@ uni-app navigation works with a native page stack that has practical limits. In 
 
 - Unified Promise-based routing API via `router` and `useRouter()`
 - Logical history stack (`list`, `peek`, `findLast`, `clear`)
+- Dual-stack model: physical stack + graph stack for fallback past hard limits
 - Automatic `navigateTo -> redirectTo` downgrade near stack limits
 - Native-first back strategy with logical-history synchronization
+- Setup-once auto reconcile on page `onShow` (enabled by default)
 - Optional route-stack graph logging through `onLog`
 
 ## Installation
@@ -28,11 +30,14 @@ pnpm add uni-routefinity
 ```ts
 import { setupUniRouter, useRouter } from "uni-routefinity";
 
+// alias: router.setup(options) also works
 setupUniRouter({
   stackSafeLimit: 9,
   pageHardLimit: 5,
   debounceMs: 400,
-  protectedPaths: ["/pages/user/home/index", "/pages/user/mine/index"]
+  protectedPaths: ["/pages/user/home/index", "/pages/user/mine/index"],
+  autoReconcileOnShow: true,
+  onLog: (graph, history) => console.log(graph)
 });
 
 const router = useRouter();
@@ -49,6 +54,7 @@ await router.navigateBack();
 ### Setup
 
 - `setupUniRouter(policy?: RoutefinityOptions): void`
+- `router.setup(policy?: RoutefinityOptions): void` (alias)
 
 Notes:
 
@@ -62,33 +68,41 @@ Notes:
 - `router.reLaunch(url: string, params?: Record<string, unknown>): Promise<void>`
 - `router.switchTab(url: string): Promise<void>`
 - `router.navigateBack(delta = 1): Promise<void>`
+- `router.reconcileWithNativePages(reason?: string, force?: boolean): boolean`
 
 ### History Methods
 
-- `router.history.list(): RouteSnapshot[]`
+- `router.history.list(): RouteSnapshot[]` — physical stack, aligned with native
+- `router.history.listForGraph(): RouteSnapshot[]` — graph stack; longer than `list()` when stack limit caused redirects to swap the top
 - `router.history.peek(): RouteSnapshot | undefined`
 - `router.history.findLast(path: string): RouteSnapshot | undefined`
 - `router.history.clear(): void`
+- `router.history.reconcile(reason?: string, force?: boolean): boolean`
 
 ## Configuration
 
 `setupUniRouter` accepts `RoutefinityOptions`:
 
-| Field            | Type                       | Default     | Description                                                          |
-| ---------------- | -------------------------- | ----------- | -------------------------------------------------------------------- |
-| `stackSafeLimit` | `number`                   | `9`         | Soft threshold for switching `navigateTo` to `redirectTo`            |
-| `pageHardLimit`  | `number`                   | `5`         | Hard limit threshold for downgrade                                   |
-| `debounceMs`     | `number`                   | `400`       | Debounce window for repeated `navigateTo`                            |
-| `protectedPaths` | `string[]`                 | `[]`        | Back fallback to these paths uses `reLaunch` instead of `redirectTo` |
-| `onLog`          | `(graph, history) => void` | `undefined` | Debug hook for route graph and snapshots                             |
+| Field                 | Type                       | Default     | Description                                                          |
+| --------------------- | -------------------------- | ----------- | -------------------------------------------------------------------- |
+| `stackSafeLimit`      | `number`                   | `9`         | Soft threshold for switching `navigateTo` to `redirectTo`            |
+| `pageHardLimit`       | `number`                   | `5`         | Hard limit threshold for downgrade                                   |
+| `debounceMs`          | `number`                   | `400`       | Debounce window for repeated `navigateTo`                            |
+| `protectedPaths`      | `string[]`                 | `[]`        | Back fallback to these paths uses `reLaunch` instead of `redirectTo` |
+| `autoReconcileOnShow` | `boolean`                  | `true`      | Auto patch page `onShow` to reconcile logical/native stacks          |
+| `onLog`               | `(graph, history) => void` | `undefined` | Debug hook for route graph and snapshots                             |
 
 ## Routing Strategy
 
 - Duplicate `navigateTo` in a short window is debounced.
 - Same path with different params uses `redirectTo` and replaces the logical current entry.
 - When native stack depth approaches configured limits, `navigateTo` degrades to `redirectTo`.
+  The logical stack applies `replaceCurrent` to mirror the physical frame, and the graph stack additionally records the swapped-out entry so the access chain is preserved for debugging and back fallback.
 - If native and logical stacks diverge, history can be realigned from `getCurrentPages()` before route decisions.
 - `navigateBack` prefers native back when target alignment is verified; on success, logical history is synchronized.
+- When the graph stack is longer than the physical stack (hard limit caused several top swaps), `navigateBack` redirects one step at a time back through the graph chain, until physical and graph stacks align and the system back path resumes.
+- Back fallback to a path in `protectedPaths` uses `reLaunch`, otherwise `redirectTo`.
+- System swipe-back is reconciled automatically through setup-installed page `onShow` patch.
 
 ## Migration Notes
 
